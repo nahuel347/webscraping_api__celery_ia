@@ -2,12 +2,13 @@ version: "3.9"
 
 services:
   app:
+    container_name: app_scraping
     build:
       context: .
       args:
         - DEV=true
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./app:/app
       - dev-static-data:/vol/web
@@ -24,6 +25,23 @@ services:
       - DEBUG=1
     depends_on:
       - db
+  celery:
+    container_name: celery_scraping
+    build:
+      context: ./dcelery
+    restart: always
+    command: celery --app=dcelery worker -l INFO -Q tasks,dead_letter -E -B
+    volumes:
+      - ./dcelery:/usr/src/app/
+    environment:
+      - DEBUG=1
+      - SECRET_KEY=0930jd30j9jd09j09j109fj01j9f
+      - ALLOWED_HOSTS=localhost,127.0.0.1
+    depends_on:
+      - redis
+      - app
+      - rabbitmq
+      - db
 
   db:
     image: postgres:13-alpine
@@ -37,15 +55,14 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     restart: always
-    tty: true
-    stdin_open: true
-    hostname: rabbithost
-    volumes:
-      - rabbitmq:/var/lib/rabbitmq
-    ports:
-      - "15672:15672"
-      - "5672:5672"
+    container_name: rabbitmq_web
 
+    ports:
+      - "5673:5672"    # AMQP
+      - "15673:15672"  # Interfaz web
+  redis:
+    image: redis:7.0.11-alpine
+    restart: always
 volumes:
   dev-db-data:
   dev-static-data:

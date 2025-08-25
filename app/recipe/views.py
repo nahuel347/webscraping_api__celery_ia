@@ -12,6 +12,10 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
+import asyncio
+from crawl4ai import *
+from crawl4ai import AsyncWebCrawler
+from asgiref.sync import async_to_sync
 
 # Create your views here.
 from core.models import Recipe, Tag, Ingredient
@@ -33,32 +37,21 @@ from recipe import serializers
         ]
     )
 )
-class RecipeViewSet(viewsets.ModelViewSet):
+class RecipeViewSet(viewsets.ViewSet):
+    def list(self, request):
+        data = async_to_sync(self._get_data)()
+        return Response({"data": data})
 
-    serializer_class = serializers.RecipeDetailSerializer
-    queryset = Recipe.objects.all()
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    async def _get_data(self):
+        async with AsyncWebCrawler() as crawler:
+            result = await crawler.arun(url="https://corfo.cl/sites/cpp/regiones/coquimbo/")
+        return result.markdown.split('\n######')
+    
 
-    def _params_to_ints(self, qs):
 
-        return [int(str_id) for str_id in qs.split(',')]
 
-    def get_queryset(self):
 
-        tags = self.request.query_params.get('tags')
-        ingredients = self.request.query_params.get('ingredients')
-        queryset = self.queryset
-        if tags:
-            tag_ids = self._params_to_ints(tags)
-            queryset = queryset.filter(tags__id__in=tag_ids)
-        if ingredients:
-            ingredient_ids = self._params_to_ints(ingredients)
-            queryset = queryset.filter(ingredients__id__in=ingredient_ids)
 
-        return queryset.filter(
-            user=self.request.user
-        ).order_by('-id').distinct()
 
     def get_serializer_class(self):
 
