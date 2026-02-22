@@ -3,6 +3,7 @@ from datetime import timedelta
 from dcelery.celery_config import app
 
 import logging
+from celery.schedules import crontab, crontab_parser
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ app.conf.beat_schedule = {
     # },
     'task2':{
         'task': 'newapp.tasks.management_command',
-        'schedule': timedelta(seconds=20),
+        'schedule': crontab(minute=1, hour=20, day_of_week="*"),
     }
 }
 

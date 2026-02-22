@@ -13,13 +13,17 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
 import asyncio
-from crawl4ai import *
-from crawl4ai import AsyncWebCrawler
 from asgiref.sync import async_to_sync
+import httpx
+import re
+from rest_framework import viewsets
+from rest_framework.response import Response
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
 # Create your views here.
 from core.models import Recipe, Tag, Ingredient
 from recipe import serializers
+import random
 
 @extend_schema_view(
     list=extend_schema(
@@ -40,18 +44,93 @@ from recipe import serializers
 class RecipeViewSet(viewsets.ViewSet):
     def list(self, request):
         data = async_to_sync(self._get_data)()
-        return Response({"data": data})
+        print(data)
+        return Response({"data": data, "total": len(data)})
 
-    async def _get_data(self):
-        async with AsyncWebCrawler() as crawler:
-            result = await crawler.arun(url="https://corfo.cl/sites/cpp/regiones/coquimbo/")
-        return result.markdown.split('\n######')
     
 
 
 
+    async def _get_data(self):
+        browser_config = BrowserConfig(
+            headless=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            },
+            extra_args=["--disable-blink-features=AutomationControlled"]
+        )
+        
+        all_programs = []
+        
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            for page_num in range(1, 7):
+                print(f"--- 🚀 Procesando Página {page_num} ---")
+                
+                js_code = ""
+                if page_num > 1:
+                    # TRUCO: Vaciamos el contenido ANTES del clic. 
+                    # Así el wait_for solo se cumplirá cuando lleguen datos NUEVOS.
+                    js_code = f"""
+                    (async () => {{
+                        const targetPage = "{page_num}";
+                        const container = document.querySelector('#_corfoportallists_WAR_corfoportallistsportlet_programasConvocatorias');
+                        const buttons = Array.from(document.querySelectorAll('a.page-link'));
+                        const btn = buttons.find(b => b.innerText.trim() === targetPage);
+                        
+                        if (btn) {{
+                            if (container) container.innerHTML = ''; // Borrado físico de los items viejos
+                            btn.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                            btn.click();
+                            return true;
+                        }}
+                        return false;
+                    }})();
+                    """
 
+                run_config = CrawlerRunConfig(
+                    cache_mode=CacheMode.BYPASS,
+                    js_code=js_code if page_num > 1 else None,
+                    # La condición de espera ahora es doble: Página activa correcta Y que hayan vuelto a aparecer los items
+                    wait_for=f"js:() => {{ \
+                        const active = document.querySelector('li.page-item.active'); \
+                        const items = document.querySelectorAll('.noticias-item-completo'); \
+                        return active && active.innerText.trim() === '{page_num}' && items.length > 0; \
+                    }}",
+                    wait_until="networkidle",
+                    page_timeout=18000 
+                )
 
+                result = await crawler.arun(
+                    url="https://www.corfo.gob.cl/sites/cpp/programasyconvocatorias/",
+                    config=run_config
+                )
+
+                if result.success:
+                    # Pausa técnica para que el DOM termine de estabilizarse
+                    #await asyncio.sleep(5)
+                    
+                    content = result.markdown
+                    import re
+                    links = re.findall(r'https://www.corfo.gob.cl/sites/cpp/convocatoria/[a-zA-Z0-9\-_]+', content)
+                    
+                    new_found = 0
+                    for link in links:
+                        clean_link = link.lower().strip().rstrip('/')
+                        if clean_link not in all_programs:
+                            all_programs.append(clean_link)
+                            new_found += 1
+                    
+                    print(f"✅ Página {page_num}: +{new_found} nuevos. Total: {len(all_programs)}")
+                    
+                    # Si a pesar de todo no hay nuevos, intentamos un reintento rápido
+                    if new_found == 0 and page_num > 1:
+                        print(f"⚠️ Error de sincronía en pág {page_num}. Los datos no refrescaron.")
+                else:
+                    print(f"❌ Error: {result.error_message}")
+
+                await asyncio.sleep(random.uniform(2, 4))
+
+        return all_programs
 
     def get_serializer_class(self):
 

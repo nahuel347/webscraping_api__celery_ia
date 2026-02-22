@@ -1,6 +1,22 @@
 version: "3.9"
 
 services:
+  db:
+    image: postgres:13-alpine
+    container_name: postgres_db
+    volumes:
+      - dev-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=devdb
+      - POSTGRES_USER=devuser
+      - POSTGRES_PASSWORD=changeme
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d devdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   app:
     container_name: app_scraping
     build:
@@ -9,10 +25,10 @@ services:
         - DEV=true
     ports:
       - "8001:8000"
+    restart: unless-stopped
     volumes:
       - ./app:/app
       - dev-static-data:/vol/web
-
     command: >
       sh -c "python manage.py wait_for_db &&
              python manage.py migrate &&
@@ -24,13 +40,15 @@ services:
       - DB_PASS=changeme
       - DEBUG=1
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+
   celery:
     container_name: celery_scraping
     build:
       context: ./dcelery
-    restart: always
-    command: celery --app=dcelery worker -l INFO -Q tasks,dead_letter -E -B
+    restart: unless-stopped
+    command: celery --app=dcelery worker -l INFO -Q tasks,dead_letter -E -B --without-gossip --without-mingle --without-heartbeat
     volumes:
       - ./dcelery:/usr/src/app/
     environment:
@@ -38,33 +56,23 @@ services:
       - SECRET_KEY=0930jd30j9jd09j09j109fj01j9f
       - ALLOWED_HOSTS=localhost,127.0.0.1
     depends_on:
-      - redis
-      - app
       - rabbitmq
+      - redis
       - db
-
-  db:
-    image: postgres:13-alpine
-    volumes:
-      - dev-db-data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_DB=devdb
-      - POSTGRES_USER=devuser
-      - POSTGRES_PASSWORD=changeme
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
-    restart: always
     container_name: rabbitmq_web
-
+    restart: unless-stopped
     ports:
-      - "5673:5672"    # AMQP
-      - "15673:15672"  # Interfaz web
+      - "5673:5672"
+      - "15673:15672"
+
   redis:
     image: redis:7.0.11-alpine
-    restart: always
+    container_name: redis_cache
+    restart: unless-stopped
+
 volumes:
   dev-db-data:
   dev-static-data:
-  rabbitmq:
-

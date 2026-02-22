@@ -6,4 +6,14 @@ Pillow
 uwsgi>=2.0.20,<2.1
 playwright
 crawl4ai
+langchain-core
+langchain
+langchain-openai
+langgraph
+chromadb
+pypdf
+python-dotenv
+openai
+langgraph-sdk<0.4.0,>=0.3.0
+ddtrace
 
