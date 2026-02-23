@@ -21,7 +21,7 @@ app.conf.beat_schedule = {
     # },
     'task2':{
         'task': 'newapp.tasks.management_command',
-        'schedule': crontab(minute=1, hour=20, day_of_week="*"),
+        'schedule': crontab(minute=30, hour=15, day_of_week="*"),
     }
 }
 

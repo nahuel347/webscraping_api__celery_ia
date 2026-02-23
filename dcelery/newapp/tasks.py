@@ -46,7 +46,7 @@ def management_command():
     # 2️⃣ Eliminar duplicados
     # Convertimos a set para evitar repetidos
     datos_finales = list(set(datos_existentes + nuevos_datos))
-
+    print(f"Se encontraron {len(datos_finales)} URLs únicas.")
     # 3️⃣ Guardar nuevamente
     with open(archivo, "w", encoding="utf-8") as f:
         json.dump(datos_finales, f, ensure_ascii=False, indent=4)
